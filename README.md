@@ -22,8 +22,6 @@ Unlike a traditional reverse proxy that forwards traffic to an upstream server, 
 1. Download the lastest `sphincter-linux-x64.tar.gz` archive from the Releases page
 2. Run the provided installation script
 ```bash
-# Give run permission to the script
-chmod +x install.sh
 # Run the installation script as root
 sudo ./install.sh
 ```
@@ -39,8 +37,6 @@ Then it will be available on port **TCP 9000 (input)** and **HTTP 8080 (output)*
 ## Uninstallation
 To completely remove the server from your system, use the uninstallation script provided in the release
 ```bash
-# Give run permission to the script
-chmod +x uninstall.sh
 # Run the installation script as root
 sudo ./uninstall.sh
 ```

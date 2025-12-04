@@ -9,15 +9,14 @@ use axum::{
 };
 use clap::Parser;
 use dashmap::DashMap;
-use futures::{sink::SinkExt};
 use rand::{Rng, distr::Alphanumeric};
 use std::sync::Arc;
-use tokio::{io::AsyncReadExt, net::{TcpListener, TcpStream}};
+use tokio::{io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}, sync::mpsc};
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
 
 struct AppState {
-    rooms: DashMap<String, broadcast::Sender<Vec<u8>>>,
+    rooms: DashMap<String, (broadcast::Sender<Vec<u8>>, mpsc::Sender<Vec<u8>>)>,
 }
 
 #[derive(serde::Deserialize)]
@@ -87,24 +86,35 @@ async fn handle_tcp_connection(mut socket: TcpStream, state: Arc<AppState>) {
 
     info!("[TCP] Room created: {} ", room_id);
 
-    let (tx, _rx) = broadcast::channel(100);
+    let (broadcast_tx, _) = broadcast::channel(100);
+    let (mpsc_tx, mut mpsc_rx) = mpsc::channel(100);
     
-    state.rooms.insert(room_id.clone(), tx.clone());
+    state.rooms.insert(room_id.clone(), (broadcast_tx.clone(), mpsc_tx));
 
+    let (mut rd, mut wr) = socket.split();
     let mut buffer = [0u8; 4096];
+
     loop {
-        match socket.read(&mut buffer).await {
-            Ok(0) => {
-                info!("[TCP] Connection closed (Room {})", room_id);
-                break;
+        tokio::select! {
+            result = rd.read(&mut buffer) => {
+                match result {
+                    Ok(0) => break, // Fin de connexion
+                    Ok(n) => {
+                        let data = buffer[0..n].to_vec();
+                        let _ = broadcast_tx.send(data);
+                    }
+                    Err(e) => {
+                        error!("[TCP] Read error: {}", e);
+                        break;
+                    }
+                }
             }
-            Ok(n) => {
-                let data = buffer[0..n].to_vec();
-                let _ = tx.send(data);
-            }
-            Err(e) => {
-                error!("[TCP] Read error Room {}: {}", room_id, e);
-                break;
+
+            Some(msg) = mpsc_rx.recv() => {
+                if let Err(e) = wr.write_all(&msg).await {
+                    error!("[TCP] Write error: {}", e);
+                    break;
+                }
             }
         }
     }
@@ -119,7 +129,7 @@ async fn ws_handler(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     if state.rooms.contains_key(&params.room) {
-        ws.on_upgrade(move |socket| handle_ws_socket(socket, params.room, state))
+        ws.protocols(["obswebsocket.json"]).on_upgrade(move |socket| handle_ws_socket(socket, params.room, state))
     } else {
         warn!("[WEB] Access denied to missing room: {}", params.room);
         "Room not found".into_response()
@@ -129,32 +139,38 @@ async fn ws_handler(
 async fn handle_ws_socket(mut socket: WebSocket, room_id: String, state: Arc<AppState>) {
     info!("[WEB] Client joined Room {}", room_id);
 
-    let mut rx = match state.rooms.get(&room_id) {
-        Some(r) => r.subscribe(),
-        None => {
-            let _ = socket.close().await;
-            return;
-        }
+    // On récupère les canaux
+    let (broadcast_tx, mpsc_tx) = match state.rooms.get(&room_id) {
+        Some(r) => (r.0.clone(), r.1.clone()),
+        None => return,
     };
+
+    let mut broadcast_rx = broadcast_tx.subscribe();
 
     loop {
         tokio::select! {
-            Ok(msg) = rx.recv() => {
-                if let Err(e) = socket.send(Message::Binary(msg.into())).await {
-                    warn!("[WEB] Client send error: {}", e);
-                    break;
+            Ok(msg) = broadcast_rx.recv() => {
+                if let Ok(text) = std::str::from_utf8(&msg) {
+                    if socket.send(Message::Text(text.into())).await.is_err() { break; }
+                } else {
+                    if socket.send(Message::Binary(msg.into())).await.is_err() { break; }
                 }
             }
-
-            msg = socket.recv() => {
+            Some(Ok(msg)) = socket.recv() => {
                 match msg {
-                    Some(Ok(Message::Close(_))) | None => {
-                        info!("[WEB] Client left Room {}", room_id);
-                        break;
+                    Message::Text(text) => {
+                        let _ = mpsc_tx.send(text.as_bytes().to_vec()).await;
                     }
+                    Message::Binary(data) => {
+                        let _ = mpsc_tx.send(data.to_vec()).await;
+                    }
+                    Message::Close(_) => break,
                     _ => {}
                 }
             }
+
+            else => break,
         }
     }
+    info!("[WEB] Client left Room {}", room_id);
 }

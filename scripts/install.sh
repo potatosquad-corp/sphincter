@@ -51,11 +51,12 @@ cat > /etc/systemd/system/sphincter.service <<EOF
 [Unit]
 Description=Sphincter - TCP/WebSocket Relay
 After=network.target
+StartLimitBurst=3
 
 [Service]
 Type=simple
 User=root
-EnvironmentFile=etc/default/sphincter
+EnvironmentFile=/etc/default/sphincter
 ExecStart=/usr/local/bin/sphincter
 Restart=always
 RestartSec=3
