@@ -37,7 +37,7 @@ struct Args {
 async fn main() {
     tracing_subscriber::fmt::init();
     let args = Args::parse();
-    info!("Starting Sphincter v1.0");
+    info!("Starting Sphincter v{}",env!("CARGO_PKG_VERSION"));
 
     let state = Arc::new(AppState {
         rooms: DashMap::new(),
