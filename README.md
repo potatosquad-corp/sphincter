@@ -30,8 +30,9 @@ sudo ./install.sh
 
 This script will:
 1. Copy the binary to `/usr/local/bin/sphincter`
-2. create the service `sphincter.service`
-3. start/restart the service
+2. Create the default config file (located at `/etc/default/sphincter`)
+3. create the service `sphincter.service`
+4. start/restart the service
 
 Then it will be available on port **TCP 9000 (input)** and **HTTP 8080 (output)**.
 
@@ -65,3 +66,6 @@ server {
     }
 }
 ```
+
+## Change ports
+You can find the config at `/etc/default/sphincter`, simply edit it then restart the service with `sudo systemctl restart sphincter.service`

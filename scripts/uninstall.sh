@@ -38,6 +38,13 @@ else
     echo "Service file not found."
 fi
 
+if [-f "/etc/default/sphincter"]; then
+    rm /etc/default/sphincter
+    echo "Config file removed"
+else    
+    echo "No config file found"
+fi
+
 echo -e "${GREEN}[3/3] Removing binary...${NC}"
 # Remove binary
 if [ -f "/usr/local/bin/sphincter" ]; then

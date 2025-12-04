@@ -7,10 +7,11 @@ use axum::{
     routing::get,
     Router,
 };
+use clap::Parser;
 use dashmap::DashMap;
 use futures::{sink::SinkExt};
 use rand::{Rng, distr::Alphanumeric};
-use std::{net::SocketAddr, sync::Arc};
+use std::sync::Arc;
 use tokio::{io::AsyncReadExt, net::{TcpListener, TcpStream}};
 use tokio::sync::broadcast;
 use tracing::{error, info, warn};
@@ -24,9 +25,19 @@ struct WsParams {
     room: String,
 }
 
+#[derive(Parser, Debug)]
+struct Args {
+    #[arg(short, long, env = "SPHINCTER_TCP_ADDR", default_value = "0.0.0.0:9000")]
+    tcp_addr: String,
+    #[arg(short, long, env = "SPHINCTER_WS_ADDR", default_value = "127.0.0.1:8080")]
+    ws_addr: String,
+}
+
+
 #[tokio::main]
 async fn main() {
     tracing_subscriber::fmt::init();
+    let args = Args::parse();
     info!("Starting Sphincter v1.0");
 
     let state = Arc::new(AppState {
@@ -35,24 +46,22 @@ async fn main() {
 
     let tcp_state = state.clone();
     tokio::spawn(async move {
-        start_tcp_server(tcp_state).await;
+        start_tcp_server(tcp_state,args.tcp_addr).await;
     });
 
     let app = Router::new()
         .route("/ws", get(ws_handler))
         .with_state(state.clone());
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
-    info!("[WEB] Sphincter listening on {}", addr);
+    info!("[WEB] Sphincter listening on {}", args.ws_addr);
     
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    let listener = tokio::net::TcpListener::bind(args.ws_addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
 }
 
-async fn start_tcp_server(state: Arc<AppState>) {
-    let addr = "0.0.0.0:9000";
-    let listener = TcpListener::bind(addr).await.expect("Failed to bind TCP port 9000");
-    info!("[TCP] Sphincter ready on {}", addr);
+async fn start_tcp_server(state: Arc<AppState>,tcp_addr: String) {
+    let listener = TcpListener::bind(&tcp_addr).await.expect("Failed to bind TCP port 9000");
+    info!("[TCP] Sphincter ready on {}", tcp_addr);
 
     loop {
         match listener.accept().await {
