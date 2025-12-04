@@ -122,6 +122,16 @@ async fn handle_tcp_connection(mut socket: TcpStream, state: Arc<AppState>) {
     state.rooms.insert(room_id.clone(), room.clone());
 
     let (mut rd, mut wr) = socket.split();
+
+    let welcome_msg = serde_json::json!({
+        "internal": "welcome",
+        "room": room_id
+    });
+    let welcome_bytes = welcome_msg.to_string();
+    if let Err(e) = wr.write_all(welcome_bytes.as_bytes()).await {
+        error!("[TCP] Failed to send Room ID to client: {}", e);
+    }
+
     let mut buffer = [0u8; 4096];
 
     loop {
