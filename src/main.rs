@@ -131,18 +131,22 @@ async fn handle_tcp_connection(mut socket: TcpStream, state: Arc<AppState>) {
                     Ok(0) => break,
                     Ok(n) => {
                         let data = buffer[0..n].to_vec();
-                        if let Ok(text) = std::str::from_utf8(&data) {
-                          if let Ok(json) = serde_json::from_str::<Value>(text) {
-                                if let Some(op) = json["op"].as_u64() {
+                        let stream = serde_json::Deserializer::from_slice(&data).into_iter::<Value>();
+                        
+                        for json in stream {
+                            if let Ok(value) = json {
+                                if let Some(op) = value.get("op").and_then(|v| v.as_u64()) {
+                                    // Op 0 = Hello
                                     if op == 0 {
                                         info!("[SMART] Captured OBS 'Hello' packet");
                                         let mut w = room.obs_hello.write().await;
-                                        *w = Some(text.to_string());
+                                        *w = Some(value.to_string());
                                     }
+                                    // Op 2 = Identified
                                     else if op == 2 {
                                         info!("[SMART] Captured OBS 'Identified' packet");
                                         let mut w = room.obs_identified.write().await;
-                                        *w = Some(text.to_string());
+                                        *w = Some(value.to_string());
                                     }
                                 }
                             }
@@ -224,14 +228,15 @@ async fn handle_ws_socket(mut socket: WebSocket, room_id: String, state: Arc<App
                             if let Some(op) = json["op"].as_u64() {
                                 if op == 1 { // Identify
                                     info!("[SMART] Intercepted 'Identify' from Web Client. Blocking forwarding.");
-                                    forward_to_obs = false;
-
+                                    
                                     let r = room.obs_identified.read().await;
                                     if let Some(identified_msg) = &*r {
                                         info!("[SMART] Sending cached 'Identified' response");
+                                        forward_to_obs = false;
                                         if socket.send(Message::Text(identified_msg.clone().into())).await.is_err() { break; }
                                     } else {
-                                        warn!("[SMART] No 'Identified' packet in cache! Client might hang.");
+                                        info!("[SMART] Forwarding 'Identify' (First Authentication).");
+                                        forward_to_obs = true
                                     }
                                 }
                             }
