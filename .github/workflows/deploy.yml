@@ -16,12 +16,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 
+          fetch-depth: 0
 
       - name: Get version from Cargo.toml
         id: get_version
         run: |
-          VERSION=$(grep -m 1 '^version = ' sphincter/Cargo.toml | cut -d '"' -f 2)
+          VERSION=$(grep -m 1 '^version = ' Cargo.toml | cut -d '"' -f 2)
           echo "Detected version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
 
@@ -39,16 +39,11 @@ jobs:
 
       - name: Setup Rust
         if: steps.check_tag.outputs.exists == 'false'
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: stable
-          override: true
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Build Sphincter (Release)
         if: steps.check_tag.outputs.exists == 'false'
         run: |
-          cd sphincter
           cargo build --release --verbose
 
       - name: Package Release
@@ -56,17 +51,20 @@ jobs:
         run: |
           mkdir -p dist/sphincter-pkg
           
-          cp sphincter/target/release/sphincter dist/sphincter-pkg/
+          # Copie des fichiers (depuis la racine)
+          cp target/release/sphincter dist/sphincter-pkg/
+          cp scripts/install.sh dist/sphincter-pkg/
+          cp scripts/uninstall.sh dist/sphincter-pkg/
           
-          cp sphincter/install_sphincter.sh dist/sphincter-pkg/
-          cp sphincter/uninstall_sphincter.sh dist/sphincter-pkg/
-          
+          # Permissions
           chmod +x dist/sphincter-pkg/*.sh
           chmod +x dist/sphincter-pkg/sphincter
-      
+          
+          # Archive
           cd dist
           tar -czvf sphincter-linux-x64-v${{ steps.get_version.outputs.version }}.tar.gz sphincter-pkg
           
+          # Output variable
           echo "artifact_path=dist/sphincter-linux-x64-v${{ steps.get_version.outputs.version }}.tar.gz" >> $GITHUB_ENV
 
       - name: Create Release
@@ -84,7 +82,7 @@ jobs:
             **Version:** ${{ steps.get_version.outputs.version }}
             
             ### Installation
-            1. Download the `tar.gz` file.
+            1. Download the `tar.gz` archive.
             2. Extract it on your server.
             3. Run `sudo ./install_sphincter.sh`.
         env:
