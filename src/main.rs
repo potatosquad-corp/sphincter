@@ -135,7 +135,7 @@ async fn handle_tcp_connection(mut socket: TcpStream, state: Arc<AppState>) {
         error!("[TCP] Failed to send Room ID to client: {}", e);
     }
 
-    let mut buffer = [0u8; 1_048_576];
+    let mut buffer = vec![0u8; 1_048_576];
 
     loop {
         tokio::select! {
